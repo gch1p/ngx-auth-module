@@ -1,4 +1,7 @@
 # ngx-auth-module
 
-(c) krigga, 2019
-(c) ch1p, 2020
+### Authors
+
+Copyright (c) krigga, 2019
+
+Copyright (c) ch1p, 2020
