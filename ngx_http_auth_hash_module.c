@@ -7,6 +7,7 @@
 
 typedef struct {
     ngx_str_t key;
+    ngx_str_t cookie_name;
     ngx_regex_compile_t *book_id_regex;
     time_t expires;
     ngx_flag_t ignore;
@@ -22,7 +23,6 @@ static char *ngx_http_auth_hash_merge_conf(ngx_conf_t *cf, void *parent, void *c
 static char *ngx_http_auth_hash_book_id_regex(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
 static ngx_int_t ngx_http_auth_hash_init(ngx_conf_t *cf);
 
-static ngx_str_t ngx_http_auth_hash_cookie_name = ngx_string("book_key");
 static ngx_str_t ngx_http_auth_hash_cache_control_key = ngx_string("Cache-Control");
 static ngx_str_t ngx_http_auth_hash_cache_control_value = ngx_string("no-cache");
 
@@ -33,6 +33,14 @@ static ngx_command_t ngx_http_auth_hash_commands[] = {
         ngx_conf_set_str_slot,
         NGX_HTTP_LOC_CONF_OFFSET,
         offsetof(ngx_http_auth_hash_conf_t, key),
+        NULL
+    },
+    {
+        ngx_string("auth_hash_cookie_name"),
+        NGX_HTTP_LOC_CONF|NGX_CONF_TAKE1,
+        ngx_conf_set_str_slot,
+        NGX_HTTP_LOC_CONF_OFFSET,
+        offsetof(ngx_http_auth_hash_conf_t, cookie_name),
         NULL
     },
     {
@@ -107,6 +115,14 @@ ngx_http_auth_hash_handler(ngx_http_request_t *r)
         return NGX_HTTP_INTERNAL_SERVER_ERROR;
     }
 
+    if (ahcf->cookie_name.len == 0) {
+        ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "auth_hash_cookie_name is missing");
+        if (ahcf->ignore)
+            return NGX_DECLINED;
+        ngx_http_auth_hash_set_no_cache(r);
+        return NGX_HTTP_INTERNAL_SERVER_ERROR;
+    }
+
     if (ahcf->expires == NGX_CONF_UNSET) {
         ngx_log_error(NGX_LOG_EMERG, r->connection->log, 0, "auth_hash_expires is missing");
         if (ahcf->ignore)
@@ -122,11 +138,13 @@ ngx_http_auth_hash_handler(ngx_http_request_t *r)
     }
 
     ngx_str_t key;
-    ngx_int_t n = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &ngx_http_auth_hash_cookie_name, &key);
+    ngx_int_t n = ngx_http_parse_multi_header_lines(&r->headers_in.cookies, &(ahcf->cookie_name), &key);
 
     if (n == NGX_DECLINED) {
         ngx_log_debug0(NGX_LOG_DEBUG_HTTP, r->connection->log, 0, "cookie not found");
-        return NGX_ERROR;
+        if (ahcf->ignore)
+            return NGX_DECLINED;
+        return NGX_HTTP_FORBIDDEN;
     }
 
     ngx_str_t key_copy = key;
@@ -333,6 +351,7 @@ ngx_http_auth_hash_merge_conf(ngx_conf_t *cf, void *parent, void *child)
     ngx_http_auth_hash_conf_t *conf = child;
 
     ngx_conf_merge_str_value(conf->key, prev->key, "");
+    ngx_conf_merge_str_value(conf->cookie_name, prev->cookie_name, "");
 
     return NGX_CONF_OK;
 }
